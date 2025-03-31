@@ -12,3 +12,8 @@ scikit-learn
 lightning
 einops
 opt-einsum
+mlflow
+tensorboard
+tensorboardX
+pykeops
+# waitress # windows
