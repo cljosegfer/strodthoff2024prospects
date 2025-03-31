@@ -10,6 +10,7 @@ import numpy as np
 import torch
 import torch.utils.data
 from torchvision.transforms import Compose
+import h5pickle as h5py
 
 from pathlib import Path
 from scipy.stats import iqr
@@ -102,7 +103,7 @@ def save_dataset(df,lbl_itos,mean,std,target_root,filename_postfix="",protocol=4
     np.save(target_root/("mean"+filename_postfix+".npy"),mean)
     np.save(target_root/("std"+filename_postfix+".npy"),std)
 
-def load_dataset(target_root,filename_postfix="",df_mapped=True):
+def load_dataset(target_root,filename_postfix="",df_mapped=False):
     target_root = Path(target_root)
 
     if(df_mapped):
@@ -128,25 +129,28 @@ def dataset_add_chunk_col(df, col="data"):
     '''add a chunk column to the dataset df'''
     df["chunk"]=df.groupby(col).cumcount()
 
-def dataset_add_length_col(df, col="data", data_folder=None):
+def dataset_add_length_col(df, output_hdf5, col="data", data_folder=None):
     '''add a length column to the dataset df'''
-    df[col+"_length"]=df[col].apply(lambda x: len(np.load(x if data_folder is None else data_folder/x, allow_pickle=True)))
+    # df[col+"_length"]=df[col].apply(lambda x: len(np.load(x if data_folder is None else data_folder/x, allow_pickle=True)))
+    df[col+"_length"] = df.index.to_series().apply(lambda x: len(output_hdf5['tracings'][x]))
 
 def dataset_add_labels_col(df, col="label", data_folder=None):
     '''add a column with unique labels in column col'''
     df[col+"_labels"]=df[col].apply(lambda x: list(np.unique(np.load(x if data_folder is None else data_folder/x, allow_pickle=True))))
 
-def dataset_add_mean_col(df, col="data", axis=(0), data_folder=None):
+def dataset_add_mean_col(df, output_hdf5, col="data", axis=(0), data_folder=None):
     '''adds a column with mean'''
-    df[col+"_mean"]=df[col].apply(lambda x: np.mean(np.load(x if data_folder is None else data_folder/x, allow_pickle=True),axis=axis))
+    # df[col+"_mean"]=df[col].apply(lambda x: np.mean(np.load(x if data_folder is None else data_folder/x, allow_pickle=True),axis=axis))
+    df[col+"_mean"] = df.index.to_series().apply(lambda x: np.mean(output_hdf5['tracings'][x],axis=axis))
 
 def dataset_add_median_col(df, col="data", axis=(0), data_folder=None):
     '''adds a column with median'''
     df[col+"_median"]=df[col].apply(lambda x: np.median(np.load(x if data_folder is None else data_folder/x, allow_pickle=True),axis=axis))
 
-def dataset_add_std_col(df, col="data", axis=(0), data_folder=None):
+def dataset_add_std_col(df, output_hdf5, col="data", axis=(0), data_folder=None):
     '''adds a column with mean'''
-    df[col+"_std"]=df[col].apply(lambda x: np.std(np.load(x if data_folder is None else data_folder/x, allow_pickle=True),axis=axis))
+    # df[col+"_std"]=df[col].apply(lambda x: np.std(np.load(x if data_folder is None else data_folder/x, allow_pickle=True),axis=axis))
+    df[col+"_std"] = df.index.to_series().apply(lambda x: np.std(output_hdf5['tracings'][x],axis=axis))
 
 def dataset_add_iqr_col(df, col="data", axis=(0), data_folder=None):
     '''adds a column with mean'''
@@ -371,16 +375,18 @@ class TimeseriesDatasetCrops(torch.utils.data.Dataset):
         cols_static: (optional) list of cols with extra static information
         fs_annotation_over_fs_data over ratio of sampling frequencies
         """
-        assert not((memmap_filename is not None) and (npy_data is not None))
+        # assert not((memmap_filename is not None) and (npy_data is not None))
+        assert memmap_filename is None
+        assert npy_data is None
         # require integer entries if using memmap or npy
-        assert (memmap_filename is None and npy_data is None) or (df[col_data].dtype==np.int64 or df[col_data].dtype==np.int32 or df[col_data].dtype==np.int16)
+        # assert (memmap_filename is None and npy_data is None) or (df[col_data].dtype==np.int64 or df[col_data].dtype==np.int32 or df[col_data].dtype==np.int16)
         # keys (in column data) have to be unique
         assert(len(df[col_data].unique())==len(df))
 
         self.timeseries_df_data = np.array(df[col_data])
         if(self.timeseries_df_data.dtype not in [np.int16, np.int32, np.int64]):
             assert(memmap_filename is None and npy_data is None) #only for filenames in mode files
-            self.timeseries_df_data = np.array(df[col_data].astype(str)).astype(np.string_)
+            self.timeseries_df_data = np.array(df[col_data].astype(str)).astype(np.bytes_)
 
         if(col_lbl is None):# use dummy labels
             self.timeseries_df_label = np.zeros(len(df))
@@ -393,7 +399,7 @@ class TimeseriesDatasetCrops(torch.utils.data.Dataset):
             if(not(annotation and memmap_filename is not None)):#skip if memmap and annotation        
                 if(self.timeseries_df_label.dtype not in [np.int16, np.int32, np.int64, np.float32, np.float64]): #everything else cannot be batched anyway mp.Manager().list(self.timeseries_df_label)
                     assert(annotation and memmap_filename is None and npy_data is None)#only for filenames in mode files
-                    self.timeseries_df_label = np.array(df[col_lbl].apply(lambda x:str(x))).astype(np.string_)
+                    self.timeseries_df_label = np.array(df[col_lbl].apply(lambda x:str(x))).astype(np.bytes_)
 
         if(cols_static is not None):
             if(len(cols_static)==1):
@@ -412,7 +418,8 @@ class TimeseriesDatasetCrops(torch.utils.data.Dataset):
         self.annotation = annotation
         self.col_lbl = col_lbl
 
-        self.mode="files"
+        self.mode="h5"
+        self.hdf5_file = h5py.File(f'{self.data_folder}/MIMICstrodthoff.h5', 'r')
         self.fs_annotation_over_fs_data = fs_annotation_over_fs_data
 
         if(memmap_filename is not None):
@@ -435,7 +442,7 @@ class TimeseriesDatasetCrops(torch.utils.data.Dataset):
                 self.memmap_length_label = memmap_meta_label["length"].astype(np.int64)
                 self.memmap_file_idx_label = memmap_meta_label["file_idx"].astype(np.int64)
                 self.memmap_dtype_label = np.dtype(str(memmap_meta_label["dtype"]))
-                self.memmap_filenames_label = np.array(memmap_meta_label["filenames"]).astype(np.string_)
+                self.memmap_filenames_label = np.array(memmap_meta_label["filenames"]).astype(np.bytes_)
         elif(npy_data is not None):
             self.mode="npy"
             if(isinstance(npy_data,np.ndarray) or isinstance(npy_data,list)):
@@ -453,8 +460,9 @@ class TimeseriesDatasetCrops(torch.utils.data.Dataset):
         self.start_idx_mapping=[]
         self.end_idx_mapping=[]
 
+        assert self.mode == 'h5'
         for df_idx,(id,row) in enumerate(df.iterrows()):
-            if(self.mode=="files"):
+            if(self.mode=="h5"):
                 data_length = row["data_length"]
             elif(self.mode=="memmap"):
                 data_length= self.memmap_length[row[col_data]]
@@ -477,7 +485,8 @@ class TimeseriesDatasetCrops(torch.utils.data.Dataset):
             #append to lists
             for _ in range(copies+1):
                 for i_s,i_e in zip(idx_start,idx_end):
-                    self.df_idx_mapping.append(df_idx)
+                    # self.df_idx_mapping.append(df_idx)
+                    self.df_idx_mapping.append(id)
                     self.start_idx_mapping.append(i_s)
                     self.end_idx_mapping.append(i_e)
         #convert to np.array to avoid mp issues with python lists
@@ -527,13 +536,19 @@ class TimeseriesDatasetCrops(torch.utils.data.Dataset):
 
         #print(idx,start_idx,end_idx,start_idx_crop,end_idx_crop)
         #load the actual data
-        if(self.mode=="files"):#from separate files
-            data_filename = str(self.timeseries_df_data[df_idx],encoding='utf-8') #todo: fix potential issues here
-            if self.data_folder is not None:
-                data_filename = self.data_folder/data_filename
-            data = np.load(data_filename, allow_pickle=True)[start_idx_crop:end_idx_crop] #data type has to be adjusted when saving to npy
+        if(self.mode=="h5"):#from separate files
+            data_filename = str(self.timeseries_df_data[idx],encoding='utf-8') #todo: fix potential issues here
+            pid, sid = data_filename.split('_')
+            # if self.data_folder is not None:
+            #     data_filename = self.data_folder/data_filename
+            # data = np.load(data_filename, allow_pickle=True)[start_idx_crop:end_idx_crop] #data type has to be adjusted when saving to npy
+            data = self.hdf5_file['tracings'][df_idx]
+            subject_id = self.hdf5_file['subject_id'][df_idx]
+            study_id = self.hdf5_file['study_id'][df_idx]
+            assert int(pid[1:]) == subject_id # first char of pid and sid is a letter (p or s) in the filename
+            assert int(sid[1:]) == study_id
 
-            ID = data_filename.stem
+            # ID = data_filename.stem
 
             if(self.annotation is True):
                 label_filename = str(self.timeseries_df_label[df_idx],encoding='utf-8')
@@ -541,7 +556,7 @@ class TimeseriesDatasetCrops(torch.utils.data.Dataset):
                     label_filename = self.data_folder/label_filename
                 label = np.load(label_filename, allow_pickle=True)[start_idx_crop_label:end_idx_crop_label] #data type has to be adjusted when saving to npy
             else:
-                label = self.timeseries_df_label[df_idx] #input type has to be adjusted in the dataframe
+                label = self.timeseries_df_label[idx] #input type has to be adjusted in the dataframe
         elif(self.mode=="memmap"): #from one memmap file
             memmap_idx = self.timeseries_df_data[df_idx] #grab the actual index (Note the df to create the ds might be a subset of the original df used to create the memmap)
             memmap_file_idx = self.memmap_file_idx[memmap_idx]

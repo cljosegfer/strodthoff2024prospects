@@ -17,3 +17,5 @@ tensorboard
 tensorboardX
 pykeops
 # waitress # windows
+h5py
+h5pickle

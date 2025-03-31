@@ -60,7 +60,7 @@ def prepare_mimic_ecg(finetune_dataset, target_folder, df_mapped=None, df_diags=
         if((target_folder/"records_w_diag_icd10.pkl").exists()):
             df_diags = pd.read_pickle(target_folder/"records_w_diag_icd10.pkl")
         else:
-            df_diags = pd.read_csv(target_folder/'mimic-iv-ecg-ext-icd-diagnostic-labels-for-mimic-iv-ecg-1.0.1'/"records_w_diag_icd10.csv")
+            df_diags = pd.read_csv(target_folder/"records_w_diag_icd10.csv")
             # df_diags.drop('Unnamed: 0',axis=1, inplace=True)
             df_diags['ecg_time']=pd.to_datetime(df_diags["ecg_time"])
             df_diags['dod']=pd.to_datetime(df_diags["dod"])
