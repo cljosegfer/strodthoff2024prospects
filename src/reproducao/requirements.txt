@@ -1,0 +1,14 @@
+ipykernel
+ipywidgets
+pandas
+tqdm
+wfdb
+icd-mappings
+resampy
+torch
+torchvision
+scikit-image
+scikit-learn
+lightning
+einops
+opt-einsum
